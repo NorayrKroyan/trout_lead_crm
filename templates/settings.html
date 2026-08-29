@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Settings · TroutLead CRM{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block subheading %}Free company discovery, email sending, offer data and daily automation.{% endblock %}
+{% block content %}
+<div class="settings-grid">
+<section class="card" id="email">
+  <div class="card-head">
+    <div><h2>Free email sender</h2><p>Send from your own mailbox. Gmail SMTP is the easiest starter option and does not require a paid email API.</p></div>
+    <span class="pill {{ 'green' if (secrets.EMAIL_PROVIDER == 'gmail' and secrets.GMAIL_APP_PASSWORD_SET and secrets.GMAIL_ADDRESS) or (secrets.EMAIL_PROVIDER == 'custom' and secrets.SMTP_PASSWORD_SET and secrets.SMTP_HOST) else 'gray' }}">
+      {{ 'Configured' if (secrets.EMAIL_PROVIDER == 'gmail' and secrets.GMAIL_APP_PASSWORD_SET and secrets.GMAIL_ADDRESS) or (secrets.EMAIL_PROVIDER == 'custom' and secrets.SMTP_PASSWORD_SET and secrets.SMTP_HOST) else 'Not configured' }}
+    </span>
+  </div>
+
+  <form method="post" class="stack-form">
+    <input type="hidden" name="section" value="email">
+    <label>Email provider
+      <select name="email_provider" id="email-provider">
+        <option value="gmail" {% if secrets.EMAIL_PROVIDER != 'custom' %}selected{% endif %}>Gmail SMTP — free / recommended</option>
+        <option value="custom" {% if secrets.EMAIL_PROVIDER == 'custom' %}selected{% endif %}>Custom SMTP — own/free provider</option>
+      </select>
+    </label>
+
+    <div id="gmail-fields">
+      <div class="notice"><b>Gmail mode:</b> use your Gmail address plus a Google App Password. Never enter your normal Gmail password.</div>
+      <div class="form-row two">
+        <label>Gmail address<input type="email" name="gmail_address" value="{{ secrets.GMAIL_ADDRESS }}" placeholder="youraccount@gmail.com"></label>
+        <label>Gmail App Password<input type="password" name="gmail_app_password" placeholder="{{ 'Already saved — leave blank to keep it' if secrets.GMAIL_APP_PASSWORD_SET else '16-character Google App Password' }}"><span class="hint">Spaces are accepted.</span></label>
+      </div>
+    </div>
+
+    <div id="custom-fields">
+      <div class="notice"><b>Custom SMTP mode:</b> use credentials supplied by your email provider or your own mail server.</div>
+      <div class="form-row two">
+        <label>SMTP host<input name="smtp_host" value="{{ secrets.SMTP_HOST }}" placeholder="smtp.example.com"></label>
+        <label>SMTP port<input type="number" name="smtp_port" value="{{ secrets.SMTP_PORT or '465' }}" placeholder="465"></label>
+      </div>
+      <div class="form-row two">
+        <label>Security<select name="smtp_security"><option value="ssl" {% if secrets.SMTP_SECURITY != 'starttls' %}selected{% endif %}>SSL</option><option value="starttls" {% if secrets.SMTP_SECURITY == 'starttls' %}selected{% endif %}>STARTTLS</option></select></label>
+        <label>Sender email<input type="email" name="sender_email" value="{{ secrets.SENDER_EMAIL }}" placeholder="sales@company.com"></label>
+      </div>
+      <div class="form-row two">
+        <label>SMTP username<input name="smtp_username" value="{{ secrets.SMTP_USERNAME }}"></label>
+        <label>SMTP password<input type="password" name="smtp_password" placeholder="{{ 'Already saved — leave blank to keep it' if secrets.SMTP_PASSWORD_SET else 'SMTP password / app password' }}"></label>
+      </div>
+    </div>
+
+    <h3>Sender identity</h3>
+    <div class="form-row two"><label>Sender name<input name="from_name" value="{{ secrets.FROM_NAME }}" placeholder="Export Team"></label><label>Reply-To <span class="hint">Optional</span><input type="email" name="reply_to" value="{{ secrets.REPLY_TO }}"></label></div>
+    <div class="form-row two"><label>Your company<input name="sender_company" value="{{ secrets.SENDER_COMPANY }}"></label><label>Phone<input name="sender_phone" value="{{ secrets.SENDER_PHONE }}"></label></div>
+    <label>Website<input name="sender_website" value="{{ secrets.SENDER_WEBSITE }}"></label>
+
+    <h3>Offer defaults</h3>
+    <div class="form-row two"><label>Monthly capacity<input name="monthly_capacity" value="{{ secrets.MONTHLY_CAPACITY }}"></label><label>MOQ<input name="moq" value="{{ secrets.MOQ }}"></label></div>
+    <div class="form-row two"><label>Price<input name="price" value="{{ secrets.PRICE }}"></label><label>Incoterm<input name="incoterm" value="{{ secrets.INCOTERM }}"></label></div>
+    <button class="button primary">Save email & offer settings</button>
+  </form>
+  <form method="post" action="{{ url_for('test_email') }}" class="inline-form"><button class="button secondary">Test email login</button><span class="hint">Gmail preset: smtp.gmail.com · SSL · 465</span></form>
+</section>
+
+<section class="card">
+  <h2>Gmail setup checklist</h2>
+  <ol class="steps compact">
+    <li><b>Enable 2-Step Verification</b><span>On the Google Account used for sending.</span></li>
+    <li><b>Create a Google App Password</b><span>Name it “TroutLead CRM”.</span></li>
+    <li><b>Paste the App Password above</b><span>Do not use your normal Gmail password.</span></li>
+    <li><b>Save and test</b><span>Click “Test email login”.</span></li>
+  </ol>
+  <div class="notice warning"><b>Important:</b> keep automatic sending OFF until you have tested delivery and reviewed your outreach/compliance policy.</div>
+  <div class="secret-note">Passwords are stored only in <code>.env.local</code> on this computer and are excluded from Git.</div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div><h2>Company search</h2><p>Free DDGS search is now the default. No search API key is required.</p></div>
+    <span class="pill green">Free mode available</span>
+  </div>
+  <form method="post" class="stack-form">
+    <input type="hidden" name="section" value="search">
+    <label>Search provider
+      <select name="search_provider" id="search-provider">
+        <option value="ddgs" {% if secrets.SEARCH_PROVIDER != 'brave' %}selected{% endif %}>Free DDGS — no API key</option>
+        <option value="brave" {% if secrets.SEARCH_PROVIDER == 'brave' %}selected{% endif %}>Brave API — optional</option>
+      </select>
+    </label>
+    <div id="brave-fields">
+      <label>Brave Search API key <span class="hint">Only needed if you choose Brave</span><input type="password" name="brave_api_key" placeholder="{{ 'Already saved — paste only to replace' if secrets.BRAVE_API_KEY_SET else 'Optional' }}"></label>
+    </div>
+    <div class="notice"><b>Free DDGS:</b> public search backends can occasionally rate-limit requests. The app retries automatically, but discovery can sometimes be slower than a paid search API.</div>
+    <button class="button primary">Save search settings</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Daily automation</h2>
+  <form method="post" class="stack-form"><input type="hidden" name="section" value="automation">
+    <div class="form-row three"><label>Run time<input type="time" name="schedule_time" value="{{ settings.schedule_time }}"></label><label>Daily lead target<input type="number" name="daily_target" min="1" max="200" value="{{ settings.daily_target }}"></label><label>Daily send cap<input type="number" name="daily_send_cap" min="1" max="100" value="{{ settings.daily_send_cap }}"></label></div>
+    <div class="form-row three"><label>Minimum score<input type="number" name="min_score" value="{{ settings.min_score }}"></label><label>Min delay, seconds<input type="number" name="send_delay_min" min="2" max="300" value="{{ settings.send_delay_min }}"></label><label>Max delay, seconds<input type="number" name="send_delay_max" min="2" max="300" value="{{ settings.send_delay_max }}"></label></div>
+    <div class="notice">Bulk sending now keeps one authenticated SMTP connection open for the batch instead of logging in again for every email. Recommended starting delay: 5–10 seconds. Single-send remains immediate.</div>
+    <label class="switch-row"><span><b>Automatic discovery</b><small>Find new companies every day at the scheduled time.</small></span><input type="checkbox" name="auto_scrape" {% if settings.auto_scrape=='1' %}checked{% endif %}></label>
+    <label class="switch-row"><span><b>Automatic sending</b><small>Send only approved, non-suppressed leads. Recommended: leave OFF initially and approve leads manually.</small></span><input type="checkbox" name="auto_send" {% if settings.auto_send=='1' %}checked{% endif %}></label>
+    <fieldset><legend>Countries used by scheduled discovery</legend><div class="country-grid">{% set sc=settings.selected_countries.split(',') %}{% for c in ['Netherlands','Germany','Poland','Denmark','France','Belgium','Spain','Italy','Sweden','Czechia','Lithuania','Austria','Romania','Bulgaria','Portugal','Greece','Finland','Ireland','Croatia','Slovenia'] %}<label class="check"><input type="checkbox" name="countries" value="{{ c }}" {% if c in sc %}checked{% endif %}><span>{{ c }}</span></label>{% endfor %}</div></fieldset>
+    <button class="button primary">Save automation</button>
+  </form>
+</section>
+</div>
+
+<script>
+(function () {
+  const emailProvider = document.getElementById('email-provider');
+  const gmailFields = document.getElementById('gmail-fields');
+  const customFields = document.getElementById('custom-fields');
+  const searchProvider = document.getElementById('search-provider');
+  const braveFields = document.getElementById('brave-fields');
+
+  function updateEmail() {
+    const custom = emailProvider.value === 'custom';
+    gmailFields.style.display = custom ? 'none' : 'block';
+    customFields.style.display = custom ? 'block' : 'none';
+  }
+  function updateSearch() {
+    braveFields.style.display = searchProvider.value === 'brave' ? 'block' : 'none';
+  }
+  emailProvider.addEventListener('change', updateEmail);
+  searchProvider.addEventListener('change', updateSearch);
+  updateEmail();
+  updateSearch();
+})();
+</script>
+{% endblock %}

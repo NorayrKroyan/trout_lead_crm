@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}TroutLead CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">🐟</div>
+      <div><strong>TroutLead</strong><small>Export CRM</small></div>
+    </div>
+    <nav>
+      <a class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">▦ Dashboard</a>
+      <a class="nav-item {% if request.endpoint == 'leads' %}active{% endif %}" href="{{ url_for('leads') }}">◎ Leads</a>
+      <a class="nav-item {% if request.endpoint == 'scrape_page' %}active{% endif %}" href="{{ url_for('scrape_page') }}">⌕ Find companies</a>
+      <a class="nav-item {% if request.endpoint == 'template_page' %}active{% endif %}" href="{{ url_for('template_page') }}">✉ Quote template</a>
+      <a class="nav-item {% if request.endpoint == 'settings_page' %}active{% endif %}" href="{{ url_for('settings_page') }}">⚙ Settings</a>
+      <a class="nav-item {% if request.endpoint == 'logs_page' %}active{% endif %}" href="{{ url_for('logs_page') }}">≡ Activity log</a>
+    </nav>
+    <div class="sidebar-note">
+      <strong>Safe outreach</strong>
+      <span>Public business contacts only. Approve leads before sending.</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>{% block heading %}TroutLead CRM{% endblock %}</h1>
+        <p>{% block subheading %}Frozen-trout export lead generation and outreach{% endblock %}</p>
+      </div>
+      <div class="top-actions">{% block top_actions %}{% endblock %}</div>
+    </header>
+
+    <section id="global-job-manager" class="global-job-manager">
+      <div class="job-manager-head">
+        <div><strong>Background tasks</strong><small>Jobs keep running while you use other CRM pages.</small></div>
+        <span id="jobs-active-label" class="pill gray">Idle</span>
+      </div>
+      <div class="job-manager-grid">
+        <div class="job-manager-row">
+          <div class="job-manager-title"><span id="global-scrape-dot" class="dot"></span><b>Company discovery</b></div>
+          <div class="job-manager-info">
+            <span id="global-scrape-message">Idle</span>
+            <div class="progress-track"><div id="global-scrape-progress" class="progress-fill" style="width:0%"></div></div>
+            <small id="global-scrape-stats">0 / 0</small>
+          </div>
+          <button id="cancel-scrape-btn" class="button tiny danger-lite" type="button" onclick="cancelBackgroundJob('scrape')" disabled>Cancel</button>
+        </div>
+        <div class="job-manager-row">
+          <div class="job-manager-title"><span id="global-send-dot" class="dot"></span><b>Bulk sending</b></div>
+          <div class="job-manager-info">
+            <span id="global-send-message">Idle</span>
+            <div class="progress-track"><div id="global-send-progress" class="progress-fill" style="width:0%"></div></div>
+            <small id="global-send-stats">0 / 0</small>
+          </div>
+          <button id="cancel-send-btn" class="button tiny danger-lite" type="button" onclick="cancelBackgroundJob('send')" disabled>Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="flash-stack">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script>
+function confirmAction(message){ return confirm(message); }
+function pct(current,total){ if(!total) return 0; return Math.max(0,Math.min(100,Math.round((current/total)*100))); }
+function setTextIf(id,value){ const el=document.getElementById(id); if(el) el.textContent=value; }
+function setClassIf(id,value){ const el=document.getElementById(id); if(el) el.className=value; }
+
+async function cancelBackgroundJob(kind){
+  const label = kind === 'scrape' ? 'company discovery' : 'bulk sending';
+  if(!confirm(`Cancel the running ${label} job? Already completed work will be kept.`)) return;
+  try {
+    const r = await fetch(`/jobs/cancel/${kind}`, {method:'POST', headers:{'X-Requested-With':'fetch'}});
+    const data = await r.json();
+    await pollBackgroundJobs();
+  } catch(e) { console.error(e); }
+}
+
+async function pollBackgroundJobs(){
+  try {
+    const r = await fetch('/api/job-status', {cache:'no-store'});
+    const s = await r.json();
+    const any = !!(s.scrape_running || s.send_running);
+    const activeLabel = document.getElementById('jobs-active-label');
+    if(activeLabel){ activeLabel.textContent = any ? 'Running' : 'Idle'; activeLabel.className = 'pill '+(any?'green':'gray'); }
+
+    setTextIf('global-scrape-message', s.scrape_message || 'Idle');
+    setTextIf('global-send-message', s.send_message || 'Idle');
+    setTextIf('scrape-message', s.scrape_message || 'Idle');
+    setTextIf('send-message', s.send_message || 'Idle');
+    setTextIf('job-text', s.scrape_message || 'Idle');
+    setClassIf('job-dot', 'dot '+(s.scrape_running?'pulse':''));
+    setClassIf('global-scrape-dot', 'dot '+(s.scrape_running?'pulse':''));
+    setClassIf('global-send-dot', 'dot '+(s.send_running?'pulse':''));
+
+    const sp = document.getElementById('global-scrape-progress');
+    if(sp) sp.style.width = pct(Number(s.scrape_current||0),Number(s.scrape_total||0))+'%';
+    const ep = document.getElementById('global-send-progress');
+    if(ep) ep.style.width = pct(Number(s.send_current||0),Number(s.send_total||0))+'%';
+    setTextIf('global-scrape-stats', `${s.scrape_current||0} / ${s.scrape_total||0} saved · ${s.scrape_inspected||0} domains inspected · ${s.scrape_skipped_seen||0} old skipped`);
+    setTextIf('global-send-stats', `${s.send_current||0} / ${s.send_total||0} processed · ${s.send_sent||0} sent · ${s.send_failed||0} failed`);
+
+    const cb1=document.getElementById('cancel-scrape-btn');
+    if(cb1){ cb1.disabled=!s.scrape_running || !!s.scrape_cancel_requested; cb1.textContent=s.scrape_cancel_requested?'Stopping…':'Cancel'; }
+    const cb2=document.getElementById('cancel-send-btn');
+    if(cb2){ cb2.disabled=!s.send_running || !!s.send_cancel_requested; cb2.textContent=s.send_cancel_requested?'Stopping…':'Cancel'; }
+  } catch(e) {}
+}
+pollBackgroundJobs();
+setInterval(pollBackgroundJobs, 3000);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

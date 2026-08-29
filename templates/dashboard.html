@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · TroutLead CRM{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block subheading %}See lead discovery, approvals and sending status at a glance.{% endblock %}
+{% block top_actions %}
+<a class="button secondary" href="{{ url_for('scrape_page') }}">Find new companies</a>
+<form method="post" action="{{ url_for('send_approved') }}" style="display:inline" onsubmit="return confirmAction('Send quotes to approved leads up to the daily cap?');">
+  <button class="button primary" {% if job.send_running %}disabled{% endif %}>Send approved</button>
+</form>
+{% endblock %}
+{% block content %}
+<div class="stats-grid">
+  <div class="stat"><span>Total leads</span><strong>{{ stats.total }}</strong></div>
+  <div class="stat"><span>New</span><strong>{{ stats.new }}</strong></div>
+  <div class="stat"><span>Approved</span><strong>{{ stats.approved }}</strong></div>
+  <div class="stat"><span>Sent</span><strong>{{ stats.sent }}</strong></div>
+  <div class="stat"><span>Sent today</span><strong>{{ stats.sent_today }}</strong></div>
+  <div class="stat"><span>Suppressed</span><strong>{{ stats.opted_out }}</strong></div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><div><h2>Automation</h2><p>Current local-server schedule</p></div><a href="{{ url_for('settings_page') }}">Manage</a></div>
+    <div class="automation-row"><span>Daily discovery</span><strong class="pill {{ 'green' if settings.auto_scrape == '1' else 'gray' }}">{{ 'ON' if settings.auto_scrape == '1' else 'OFF' }}</strong></div>
+    <div class="automation-row"><span>Automatic sending</span><strong class="pill {{ 'amber' if settings.auto_send == '1' else 'gray' }}">{{ 'ON' if settings.auto_send == '1' else 'OFF' }}</strong></div>
+    <div class="automation-row"><span>Schedule</span><strong>{{ settings.schedule_time }}</strong></div>
+    <div class="automation-row"><span>Daily target / send cap</span><strong>{{ settings.daily_target }} / {{ settings.daily_send_cap }}</strong></div>
+    <div class="job-panel">
+      <div><span class="dot {{ 'pulse' if job.scrape_running else '' }}"></span><b>Discovery:</b> <span id="scrape-message">{{ job.scrape_message }}</span></div>
+      <div><span class="dot {{ 'pulse' if job.send_running else '' }}"></span><b>Sending:</b> <span id="send-message">{{ job.send_message }}</span></div>
+      <small class="muted">Use the Background tasks panel above to monitor progress or cancel either process without stopping the CRM.</small>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Workflow</h2><p>Recommended operating sequence</p></div></div>
+    <ol class="steps">
+      <li><b>Discover</b><span>Search EU seafood companies and public contacts.</span></li>
+      <li><b>Review</b><span>Check score, evidence and source page.</span></li>
+      <li><b>Approve</b><span>Only approved leads can be emailed.</span></li>
+      <li><b>Send</b><span>Gmail sends with delays and daily cap.</span></li>
+      <li><b>Suppress</b><span>Mark REMOVE/opt-out requests immediately.</span></li>
+    </ol>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head"><div><h2>Top leads</h2><p>Highest-scoring contacts currently in the database</p></div><a href="{{ url_for('leads') }}">View all</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Company</th><th>Country</th><th>Email</th><th>Score</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for lead in leads %}
+        <tr>
+          <td><strong>{{ lead.company_name }}</strong><small>{{ lead.domain }}</small></td>
+          <td>{{ lead.country or '—' }}</td>
+          <td class="mono">{{ lead.email }}</td>
+          <td><span class="score">{{ lead.score }}</span></td>
+          <td><span class="status {{ lead.status }}">{{ lead.status }}</span></td>
+          <td><a class="text-link" href="{{ url_for('preview_lead', lead_id=lead.id) }}">Preview</a></td>
+        </tr>
+      {% else %}<tr><td colspan="6" class="empty">No leads yet. Start with “Find new companies”.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>Recent activity</h2><p>Audit trail of discovery and sending</p></div><a href="{{ url_for('logs_page') }}">Full log</a></div>
+  <div class="activity-list">
+    {% for row in logs %}
+      <div class="activity"><span>{{ row.created_at[:19].replace('T',' ') }}</span><b>{{ row.event_type.replace('_',' ') }}</b><p>{{ row.detail }}</p></div>
+    {% else %}<p class="muted">No activity yet.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+venv/.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local CRM data / backups
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+backups/
+backup_before_*/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

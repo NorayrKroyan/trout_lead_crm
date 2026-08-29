@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Preview · {{ lead.company_name }}{% endblock %}
+{% block heading %}Quote preview{% endblock %}
+{% block subheading %}Review exactly what will be sent to {{ lead.email }}.{% endblock %}
+{% block top_actions %}<a class="button ghost" href="{{ url_for('leads') }}">Back to leads</a>{% endblock %}
+{% block content %}
+<div class="grid-2 align-start">
+<section class="card email-preview">
+  <div class="email-meta"><span>To</span><strong>{{ lead.email }}</strong></div>
+  <div class="email-meta"><span>Company</span><strong>{{ lead.company_name }}</strong></div>
+  <div class="email-meta"><span>Subject</span><strong>{{ subject }}</strong></div>
+  <pre>{{ body }}</pre>
+</section>
+<section class="card sticky-card">
+  <h2>Lead check</h2>
+  <dl class="detail-list"><div><dt>Country</dt><dd>{{ lead.country or '—' }}</dd></div><div><dt>Fit score</dt><dd>{{ lead.score }}</dd></div><div><dt>Evidence</dt><dd>{{ lead.evidence }}</dd></div><div><dt>Status</dt><dd>{{ lead.status }}</dd></div></dl>
+  <a class="button secondary wide" href="{{ lead.source_url or lead.website }}" target="_blank" rel="noopener">Review source page ↗</a>
+  {% if not lead.approved and not lead.opted_out %}<form method="post" action="{{ url_for('approve_lead', lead_id=lead.id) }}"><button class="button success wide">Approve this lead</button></form>{% endif %}
+  {% if lead.approved and not lead.opted_out %}<form method="post" action="{{ url_for('send_lead', lead_id=lead.id) }}" onsubmit="return confirmAction('Send this quote now through Gmail?');"><button class="button primary wide">Send quote now</button></form>{% endif %}
+  {% if lead.opted_out %}<div class="notice warning">This contact is suppressed and cannot be sent to.</div>{% endif %}
+</section>
+</div>
+{% endblock %}

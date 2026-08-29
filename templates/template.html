@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Quote template · TroutLead CRM{% endblock %}
+{% block heading %}Quote template{% endblock %}
+{% block subheading %}Edit the commercial email once; each approved lead gets the company-specific version.{% endblock %}
+{% block content %}
+<div class="grid-2 align-start">
+<section class="card">
+<form method="post" class="stack-form">
+  <label>Subject<input name="subject" value="{{ template.subject }}"></label>
+  <label>Email body<textarea class="template-editor" name="body" rows="28">{{ template.body }}</textarea></label>
+  <button class="button primary">Save template</button>
+</form>
+</section>
+<section class="card sticky-card">
+  <h2>Available placeholders</h2>
+  <div class="placeholder-list">
+    {% for p in ['{company_name}','{evidence}','{sender_name}','{company_sender}','{phone}','{website_sender}','{monthly_capacity}','{moq}','{price}','{incoterm}','{greeting}'] %}<code>{{ p }}</code>{% endfor %}
+  </div>
+  <div class="notice">Keep the message relevant and factual. The included template also tells recipients how to opt out by replying REMOVE.</div>
+</section>
+</div>
+{% endblock %}

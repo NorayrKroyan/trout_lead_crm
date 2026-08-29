@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Activity log · TroutLead CRM{% endblock %}
+{% block heading %}Activity log{% endblock %}
+{% block subheading %}Discovery, approval, sending and failure history.{% endblock %}
+{% block content %}
+<section class="card no-pad"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>Company</th><th>Email</th><th>Detail</th></tr></thead><tbody>{% for row in logs %}<tr><td class="mono">{{ row.created_at[:19].replace('T',' ') }}</td><td><span class="status neutral">{{ row.event_type.replace('_',' ') }}</span></td><td>{{ row.company_name or '—' }}</td><td class="mono">{{ row.email or '—' }}</td><td>{{ row.detail }}</td></tr>{% else %}<tr><td colspan="5" class="empty">No activity yet.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}
