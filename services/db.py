@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS leads (
     updated_at TEXT NOT NULL,
     sent_at TEXT,
     last_error TEXT,
+    send_count INTEGER DEFAULT 0,
+    phone TEXT,
+    address TEXT,
+    discovery_source TEXT DEFAULT 'web',
+    google_place_id TEXT,
     UNIQUE(domain, email)
 );
 
@@ -66,11 +71,26 @@ CREATE TABLE IF NOT EXISTS scrape_history (
     source_url TEXT,
     status TEXT NOT NULL DEFAULT 'seen',
     score INTEGER DEFAULT 0,
-    detail TEXT
+    detail TEXT,
+    company_name TEXT,
+    website TEXT,
+    discovery_source TEXT,
+    search_query TEXT,
+    evidence TEXT,
+    emails TEXT,
+    email_count INTEGER DEFAULT 0,
+    phone TEXT,
+    address TEXT,
+    pages_checked INTEGER DEFAULT 0,
+    reason TEXT,
+    google_place_id TEXT,
+    http_status INTEGER DEFAULT 0,
+    search_title TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_scrape_history_status ON scrape_history(status);
 CREATE INDEX IF NOT EXISTS idx_scrape_history_last_seen ON scrape_history(last_seen);
+CREATE INDEX IF NOT EXISTS idx_scrape_history_country ON scrape_history(country);
 """
 
 DEFAULT_SETTINGS = {
@@ -139,6 +159,51 @@ def init_db():
     """Additive migration only. Existing CRM data is never deleted or recreated."""
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+
+        # Additive migrations for existing local databases.
+        existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(leads)").fetchall()}
+        additive_columns = {
+            "send_count": "INTEGER DEFAULT 0",
+            "phone": "TEXT",
+            "address": "TEXT",
+            "discovery_source": "TEXT DEFAULT 'web'",
+            "google_place_id": "TEXT",
+        }
+        for column, ddl in additive_columns.items():
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE leads ADD COLUMN {column} {ddl}")
+        # Existing rows with sent_at represent at least one historical send.
+        conn.execute(
+            "UPDATE leads SET send_count=1 "
+            "WHERE sent_at IS NOT NULL AND COALESCE(send_count, 0)=0"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_google_place_id ON leads(google_place_id)")
+
+        # Additive analyzed-website metadata. Existing scrape_history rows remain
+        # untouched; the new columns are simply available for future inspections.
+        history_columns = {row["name"] for row in conn.execute("PRAGMA table_info(scrape_history)").fetchall()}
+        history_additive = {
+            "company_name": "TEXT",
+            "website": "TEXT",
+            "discovery_source": "TEXT",
+            "search_query": "TEXT",
+            "evidence": "TEXT",
+            "emails": "TEXT",
+            "email_count": "INTEGER DEFAULT 0",
+            "phone": "TEXT",
+            "address": "TEXT",
+            "pages_checked": "INTEGER DEFAULT 0",
+            "reason": "TEXT",
+            "google_place_id": "TEXT",
+            "http_status": "INTEGER DEFAULT 0",
+            "search_title": "TEXT",
+        }
+        for column, ddl in history_additive.items():
+            if column not in history_columns:
+                conn.execute(f"ALTER TABLE scrape_history ADD COLUMN {column} {ddl}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scrape_history_country ON scrape_history(country)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scrape_history_source ON scrape_history(discovery_source)")
+
         for key, value in DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)",
@@ -204,8 +269,9 @@ def upsert_lead(lead):
             """
             INSERT INTO leads(
                 company_name,domain,website,country,email,email_type,score,evidence,
-                source_url,status,approved,opted_out,first_seen,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,'new',0,0,?,?)
+                source_url,phone,address,discovery_source,google_place_id,
+                status,approved,opted_out,first_seen,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'new',0,0,?,?)
             ON CONFLICT(domain,email) DO UPDATE SET
                 company_name=excluded.company_name,
                 website=COALESCE(excluded.website, leads.website),
@@ -214,13 +280,19 @@ def upsert_lead(lead):
                 score=MAX(leads.score, excluded.score),
                 evidence=COALESCE(excluded.evidence, leads.evidence),
                 source_url=COALESCE(excluded.source_url, leads.source_url),
+                phone=COALESCE(NULLIF(excluded.phone,''), leads.phone),
+                address=COALESCE(NULLIF(excluded.address,''), leads.address),
+                discovery_source=COALESCE(NULLIF(excluded.discovery_source,''), leads.discovery_source),
+                google_place_id=COALESCE(NULLIF(excluded.google_place_id,''), leads.google_place_id),
                 updated_at=excluded.updated_at
             """,
             (
                 lead["company_name"], domain, lead.get("website"),
                 lead.get("country"), email, lead.get("email_type", "business"),
                 int(lead.get("score", 0)), lead.get("evidence", ""),
-                lead.get("source_url", ""), now, now,
+                lead.get("source_url", ""), lead.get("phone", ""), lead.get("address", ""),
+                lead.get("discovery_source", "web"), lead.get("google_place_id", ""),
+                now, now,
             ),
         )
         row = conn.execute(
@@ -269,7 +341,8 @@ def count_leads(search="", status="", country="", approved=""):
 def matching_lead_ids(search="", status="", country="", approved="", sendable_only=False):
     clauses, params = _lead_filter(search, status, country, approved)
     if sendable_only:
-        clauses += ["approved=1", "opted_out=0", "status IN ('new','approved','failed')"]
+        # Manual sends may intentionally resend a previously sent lead.
+        clauses += ["approved=1", "opted_out=0"]
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT id FROM leads WHERE {' AND '.join(clauses)} ORDER BY score DESC, id ASC",
@@ -296,7 +369,9 @@ def get_leads_by_ids(lead_ids, sendable_only=False):
             seen.add(lead_id)
     if not ids:
         return []
-    extra = " AND approved=1 AND opted_out=0 AND status IN ('new','approved','failed')" if sendable_only else ""
+    # sendable_only is for an explicit/manual choice. It intentionally allows resends.
+    # Automatic sending uses eligible_to_send(), which still excludes status='sent'.
+    extra = " AND approved=1 AND opted_out=0" if sendable_only else ""
     rows = []
     # Chunk to stay below SQLite parameter limits even after the CRM grows large.
     with get_conn() as conn:
@@ -315,7 +390,7 @@ def update_lead(lead_id, **fields):
     allowed = {
         "company_name", "country", "email", "score", "evidence", "status",
         "approved", "opted_out", "sent_at", "last_error", "website", "source_url",
-        "email_type"
+        "email_type", "phone", "address", "discovery_source", "google_place_id", "send_count"
     }
     pairs = [(k, v) for k, v in fields.items() if k in allowed]
     if not pairs:
@@ -325,6 +400,21 @@ def update_lead(lead_id, **fields):
     values = [v for _, v in pairs] + [lead_id]
     with get_conn() as conn:
         conn.execute(f"UPDATE leads SET {set_sql} WHERE id=?", values)
+
+
+def mark_lead_sent(lead_id, sent_at):
+    """Record a successful send without losing resend history."""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE leads
+               SET status='sent',
+                   sent_at=?,
+                   send_count=COALESCE(send_count, 0) + 1,
+                   last_error='',
+                   updated_at=?
+               WHERE id=?""",
+            (sent_at, utcnow(), lead_id),
+        )
 
 
 def bulk_action_ids(lead_ids, action):
@@ -468,8 +558,13 @@ def domain_seen(domain):
         return conn.execute("SELECT 1 FROM leads WHERE lower(domain)=? LIMIT 1", (domain,)).fetchone() is not None
 
 
-def mark_domain_seen(domain, country="", source_url="", status="seen", score=0, detail=""):
-    """Persist a domain before crawling it so later scraping jobs never inspect it again."""
+def mark_domain_seen(
+    domain, country="", source_url="", status="seen", score=0, detail="",
+    company_name="", website="", discovery_source="", search_query="",
+    evidence="", emails="", email_count=0, phone="", address="",
+    pages_checked=0, reason="", google_place_id="", http_status=0, search_title="",
+):
+    """Persist every inspected domain plus analysis metadata without deleting old history."""
     if not domain:
         return
     domain = domain.strip().lower()
@@ -477,18 +572,110 @@ def mark_domain_seen(domain, country="", source_url="", status="seen", score=0, 
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO scrape_history(domain,first_seen,last_seen,country,source_url,status,score,detail)
-            VALUES(?,?,?,?,?,?,?,?)
+            INSERT INTO scrape_history(
+                domain,first_seen,last_seen,country,source_url,status,score,detail,
+                company_name,website,discovery_source,search_query,evidence,emails,email_count,
+                phone,address,pages_checked,reason,google_place_id,http_status,search_title
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(domain) DO UPDATE SET
                 last_seen=excluded.last_seen,
                 country=COALESCE(NULLIF(excluded.country,''), scrape_history.country),
                 source_url=COALESCE(NULLIF(excluded.source_url,''), scrape_history.source_url),
                 status=excluded.status,
                 score=MAX(scrape_history.score, excluded.score),
-                detail=COALESCE(NULLIF(excluded.detail,''), scrape_history.detail)
+                detail=COALESCE(NULLIF(excluded.detail,''), scrape_history.detail),
+                company_name=COALESCE(NULLIF(excluded.company_name,''), scrape_history.company_name),
+                website=COALESCE(NULLIF(excluded.website,''), scrape_history.website),
+                discovery_source=COALESCE(NULLIF(excluded.discovery_source,''), scrape_history.discovery_source),
+                search_query=COALESCE(NULLIF(excluded.search_query,''), scrape_history.search_query),
+                evidence=COALESCE(NULLIF(excluded.evidence,''), scrape_history.evidence),
+                emails=COALESCE(NULLIF(excluded.emails,''), scrape_history.emails),
+                email_count=MAX(COALESCE(scrape_history.email_count,0), COALESCE(excluded.email_count,0)),
+                phone=COALESCE(NULLIF(excluded.phone,''), scrape_history.phone),
+                address=COALESCE(NULLIF(excluded.address,''), scrape_history.address),
+                pages_checked=MAX(COALESCE(scrape_history.pages_checked,0), COALESCE(excluded.pages_checked,0)),
+                reason=COALESCE(NULLIF(excluded.reason,''), scrape_history.reason),
+                google_place_id=COALESCE(NULLIF(excluded.google_place_id,''), scrape_history.google_place_id),
+                http_status=CASE WHEN COALESCE(excluded.http_status,0)<>0 THEN excluded.http_status ELSE scrape_history.http_status END,
+                search_title=COALESCE(NULLIF(excluded.search_title,''), scrape_history.search_title)
             """,
-            (domain, now, now, country, source_url, status, int(score or 0), detail),
+            (
+                domain, now, now, country, source_url, status, int(score or 0), detail,
+                company_name, website, discovery_source, search_query, evidence, emails,
+                int(email_count or 0), phone, address, int(pages_checked or 0), reason,
+                google_place_id, int(http_status or 0), search_title,
+            ),
         )
+
+
+def _history_filter(search="", status="", country="", source=""):
+    clauses = ["1=1"]
+    params = []
+    if search:
+        clauses.append("(domain LIKE ? OR company_name LIKE ? OR source_url LIKE ? OR emails LIKE ? OR search_query LIKE ?)")
+        q = f"%{search}%"
+        params += [q, q, q, q, q]
+    if status:
+        clauses.append("status=?")
+        params.append(status)
+    if country:
+        clauses.append("country=?")
+        params.append(country)
+    if source:
+        clauses.append("discovery_source=?")
+        params.append(source)
+    return clauses, params
+
+
+def fetch_scrape_history(search="", status="", country="", source="", limit=100, offset=0):
+    clauses, params = _history_filter(search, status, country, source)
+    params += [int(limit), int(offset)]
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT * FROM scrape_history WHERE {' AND '.join(clauses)} ORDER BY last_seen DESC, domain LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+
+
+def count_scrape_history(search="", status="", country="", source=""):
+    clauses, params = _history_filter(search, status, country, source)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(*) FROM scrape_history WHERE {' AND '.join(clauses)}", params
+        ).fetchone()[0]
+
+
+def scrape_history_countries():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT country FROM scrape_history WHERE country IS NOT NULL AND country<>'' ORDER BY country"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def scrape_history_statuses():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM scrape_history GROUP BY status ORDER BY n DESC, status"
+        ).fetchall()
+    return [(r["status"], r["n"]) for r in rows]
+
+
+def scrape_history_sources():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT discovery_source FROM scrape_history WHERE discovery_source IS NOT NULL AND discovery_source<>'' ORDER BY discovery_source"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def scrape_history_stats():
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM scrape_history").fetchone()[0]
+        qualified = conn.execute("SELECT COUNT(*) FROM scrape_history WHERE status IN ('lead_saved','existing_lead','duplicate_contact')").fetchone()[0]
+        no_match = conn.execute("SELECT COUNT(*) FROM scrape_history WHERE status='no_qualified_contact'").fetchone()[0]
+        errors = conn.execute("SELECT COUNT(*) FROM scrape_history WHERE status IN ('error','unreachable')").fetchone()[0]
+    return {"total": total, "qualified": qualified, "no_match": no_match, "errors": errors}
 
 
 def scrape_history_count():

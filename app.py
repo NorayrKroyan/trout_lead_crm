@@ -10,10 +10,12 @@ from services.db import (
     init_db, dashboard_stats, fetch_leads, count_leads, countries_in_db, update_lead,
     delete_lead, get_lead, recent_logs, get_settings, set_setting, get_template,
     save_template, add_log, upsert_lead, bulk_action_ids, approve_matching_leads,
-    matching_lead_ids,
+    matching_lead_ids, fetch_scrape_history, count_scrape_history,
+    scrape_history_countries, scrape_history_statuses, scrape_history_sources,
+    scrape_history_stats,
 )
 from services.settings_store import masked_settings, save_env
-from services.scraper import scrape_new_leads, domain_of
+from services.scraper import scrape_new_leads, scrape_google_places_leads, domain_of
 from services.mailer import send_one, send_batch, send_selected, test_email_connection, render_quote
 from services.scheduler import start_scheduler, reschedule
 
@@ -149,6 +151,76 @@ def leads():
     )
 
 
+@app.route("/analyzed")
+def analyzed_websites():
+    search = request.args.get("q", "").strip()
+    status = request.args.get("status", "").strip()
+    country = request.args.get("country", "").strip()
+    source = request.args.get("source", "").strip()
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", "50"))
+    except ValueError:
+        per_page = 50
+    per_page = per_page if per_page in {25, 50, 100, 200} else 50
+
+    total = count_scrape_history(search=search, status=status, country=country, source=source)
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    rows = fetch_scrape_history(
+        search=search, status=status, country=country, source=source,
+        limit=per_page, offset=offset,
+    )
+
+    base_query = {
+        "q": search, "status": status, "country": country, "source": source,
+        "per_page": per_page,
+    }
+
+    def page_url(target_page):
+        values = {**base_query, "page": target_page}
+        return url_for("analyzed_websites") + "?" + urlencode({k: v for k, v in values.items() if v != ""})
+
+    export_query = urlencode({k: v for k, v in base_query.items() if v != "" and k != "per_page"})
+    export_url = url_for("export_analyzed_csv") + (("?" + export_query) if export_query else "")
+
+    return render_template(
+        "analyzed.html", rows=rows, stats=scrape_history_stats(),
+        countries=scrape_history_countries(), statuses=scrape_history_statuses(),
+        sources=scrape_history_sources(), q=search, status=status, country=country,
+        source=source, page=page, per_page=per_page, total=total,
+        total_pages=total_pages, page_url=page_url, export_url=export_url,
+    )
+
+
+@app.get("/analyzed/export.csv")
+def export_analyzed_csv():
+    search = request.args.get("q", "").strip()
+    status = request.args.get("status", "").strip()
+    country = request.args.get("country", "").strip()
+    source = request.args.get("source", "").strip()
+    rows = fetch_scrape_history(search=search, status=status, country=country, source=source, limit=100000, offset=0)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    fields = [
+        "domain", "company_name", "website", "country", "status", "score",
+        "evidence", "reason", "emails", "email_count", "phone", "address",
+        "pages_checked", "http_status", "discovery_source", "search_query",
+        "google_place_id", "source_url", "search_title", "first_seen", "last_seen", "detail",
+    ]
+    writer.writerow(fields)
+    for row in rows:
+        writer.writerow([row[field] for field in fields])
+    return Response(
+        output.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=trout_analyzed_websites.csv"},
+    )
+
+
 @app.post("/lead/<int:lead_id>/approve")
 def approve_lead(lead_id):
     update_lead(lead_id, approved=1, status="approved")
@@ -232,7 +304,7 @@ def send_all_quotes():
     filters = _lead_filters_from_request(form=True)
     ids = matching_lead_ids(**filters, sendable_only=True)
     if not ids:
-        flash("No approved, unsent leads match the current filters.", "warning")
+        flash("No approved, non-suppressed leads match the current filters.", "warning")
         return _return_to_leads()
     if not _start_job("send", "Preparing all matching approved quotes…", total=len(ids)):
         flash("A send job is already running.", "warning")
@@ -268,7 +340,7 @@ def send_lead(lead_id):
         send_one(lead)
         flash(f"Quote sent to {lead['email']}.", "success")
     except Exception as exc:
-        update_lead(lead_id, status="failed", last_error=str(exc))
+        update_lead(lead_id, status=("sent" if lead["sent_at"] else "failed"), last_error=str(exc))
         add_log("email_failed", str(exc), lead_id)
         flash(f"Send failed: {exc}", "error")
     return redirect(url_for("leads"))
@@ -339,7 +411,7 @@ def send_approved():
     return redirect(url_for("dashboard"))
 
 
-def _scrape_thread(countries, target, min_score, custom_keywords):
+def _scrape_thread(countries, target, min_score, custom_keywords, provider="web"):
     msg = "Scrape job finished."
     try:
         def progress(message, current=0, total=0, inspected=0, skipped_seen=0, **_):
@@ -350,7 +422,8 @@ def _scrape_thread(countries, target, min_score, custom_keywords):
                 JOB_STATE["scrape_inspected"] = int(inspected or 0)
                 JOB_STATE["scrape_skipped_seen"] = int(skipped_seen or 0)
 
-        result = scrape_new_leads(
+        scrape_func = scrape_google_places_leads if provider == "google_places" else scrape_new_leads
+        result = scrape_func(
             countries,
             target,
             min_score,
@@ -390,6 +463,9 @@ def scrape_page():
         target = int(request.form.get("target", settings.get("daily_target", "50")))
         min_score = int(request.form.get("min_score", settings.get("min_score", "55")))
         custom_keywords = request.form.get("custom_keywords", "")
+        provider = request.form.get("provider", "web").strip()
+        if provider not in {"web", "google_places"}:
+            provider = "web"
         if not countries:
             flash("Select at least one country.", "error")
             return redirect(url_for("scrape_page"))
@@ -398,12 +474,19 @@ def scrape_page():
             return redirect(url_for("scrape_page"))
         threading.Thread(
             target=_scrape_thread,
-            args=(countries, target, min_score, custom_keywords),
+            args=(countries, target, min_score, custom_keywords, provider),
             daemon=True,
         ).start()
         flash("Lead discovery started in the background. Previously inspected domains are skipped and the job can be cancelled.", "success")
         return redirect(url_for("scrape_page"))
-    return render_template("scrape.html", settings=settings, all_countries=all_countries, selected=selected, job=JOB_STATE)
+    return render_template(
+        "scrape.html",
+        settings=settings,
+        secrets=masked_settings(),
+        all_countries=all_countries,
+        selected=selected,
+        job=JOB_STATE,
+    )
 
 
 @app.get("/api/job-status")
@@ -465,6 +548,7 @@ def settings_page():
             save_env({
                 "SEARCH_PROVIDER": request.form.get("search_provider", "ddgs"),
                 "BRAVE_API_KEY": request.form.get("brave_api_key", ""),
+                "GOOGLE_PLACES_API_KEY": request.form.get("google_places_api_key", ""),
             })
             flash("Search settings saved. DDGS needs no API key.", "success")
         elif section == "automation":
@@ -514,9 +598,15 @@ def export_csv():
     rows = fetch_leads(limit=100000)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["company_name", "country", "website", "domain", "email", "email_type", "score", "evidence", "status", "approved", "opted_out", "first_seen", "sent_at", "source_url"])
+    export_fields = [
+        "company_name", "country", "website", "domain", "email", "email_type",
+        "phone", "address", "score", "evidence", "status", "approved", "opted_out",
+        "first_seen", "sent_at", "send_count", "source_url", "discovery_source",
+        "google_place_id",
+    ]
+    writer.writerow(export_fields)
     for r in rows:
-        writer.writerow([r[k] for k in ["company_name", "country", "website", "domain", "email", "email_type", "score", "evidence", "status", "approved", "opted_out", "first_seen", "sent_at", "source_url"]])
+        writer.writerow([r[k] for k in export_fields])
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=trout_leads.csv"})
 
 

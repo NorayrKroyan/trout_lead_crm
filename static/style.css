@@ -21,3 +21,20 @@
 .button:disabled{opacity:.48;cursor:not-allowed}
 @media(max-width:1100px){.job-manager-grid{grid-template-columns:1fr}.job-manager-row{grid-template-columns:150px 1fr auto}}
 @media(max-width:760px){.job-manager-head>div{display:grid;gap:2px}.job-manager-row{grid-template-columns:1fr auto}.job-manager-info{grid-column:1/-1;grid-row:2}.job-manager-title{grid-column:1}.job-manager-row .button{grid-column:2;grid-row:1}}
+
+/* Analyzed websites audit trail */
+.analyzed-stats{grid-template-columns:repeat(4,1fr)}
+.analyzed-filters{grid-template-columns:2fr 1fr 1.35fr 1.1fr 110px auto}
+.analyzed-note{margin-top:14px}
+.analyzed-table{min-width:1180px}
+.analyzed-table td{vertical-align:top}
+.analyzed-table .text-link{display:inline-block;margin-top:6px}
+.query-text{max-width:260px;line-height:1.35;word-break:break-word}
+.history-reason{max-width:320px;line-height:1.4}
+.history-emails{display:block;max-width:300px;white-space:normal;word-break:break-word}
+.status.history.lead_saved,.status.history.existing_lead,.status.history.duplicate_contact{background:var(--greenbg);color:var(--green)}
+.status.history.no_qualified_contact{background:#f2f4f7;color:#475467}
+.status.history.unreachable,.status.history.error{background:var(--redbg);color:var(--red)}
+.status.history.inspecting,.status.history.cancelled_partial{background:var(--amberbg);color:var(--amber)}
+@media(max-width:1100px){.analyzed-stats{grid-template-columns:1fr 1fr}.analyzed-filters{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:760px){.analyzed-stats{grid-template-columns:1fr 1fr}.analyzed-filters{grid-template-columns:1fr}}

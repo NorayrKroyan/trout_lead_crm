@@ -16,6 +16,7 @@
     <nav>
       <a class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">▦ Dashboard</a>
       <a class="nav-item {% if request.endpoint == 'leads' %}active{% endif %}" href="{{ url_for('leads') }}">◎ Leads</a>
+      <a class="nav-item {% if request.endpoint in ['analyzed_websites','export_analyzed_csv'] %}active{% endif %}" href="{{ url_for('analyzed_websites') }}">◫ Analyzed websites</a>
       <a class="nav-item {% if request.endpoint == 'scrape_page' %}active{% endif %}" href="{{ url_for('scrape_page') }}">⌕ Find companies</a>
       <a class="nav-item {% if request.endpoint == 'template_page' %}active{% endif %}" href="{{ url_for('template_page') }}">✉ Quote template</a>
       <a class="nav-item {% if request.endpoint == 'settings_page' %}active{% endif %}" href="{{ url_for('settings_page') }}">⚙ Settings</a>

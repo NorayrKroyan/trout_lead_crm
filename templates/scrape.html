@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Find companies · TroutLead CRM{% endblock %}
 {% block heading %}Find companies{% endblock %}
-{% block subheading %}Search public business websites and collect relevant business contact emails.{% endblock %}
+{% block subheading %}Discover businesses from web search or Google Places, then collect public contact data from the companies' own websites.{% endblock %}
 {% block content %}
 <div class="grid-2 align-start">
 <section class="card">
-  <div class="card-head"><div><h2>Discovery run</h2><p>Free DDGS search → company websites → public email extraction → scoring</p></div></div>
+  <div class="card-head"><div><h2>Discovery run</h2><p>Choose a discovery source → company websites → public email/details extraction → scoring</p></div></div>
   <form method="post" class="stack-form">
-    <div class="form-row two"><label>Target new contacts<input type="number" name="target" min="1" max="200" value="{{ settings.daily_target }}"></label><label>Minimum fit score<input type="number" name="min_score" min="1" max="200" value="{{ settings.min_score }}"></label></div>
+    <div class="form-row three">
+<label>Discovery source<select name="provider"><option value="web">Web search (DDGS/Brave)</option><option value="google_places">Google Places API{% if not secrets.GOOGLE_PLACES_API_KEY_SET %} — key required{% endif %}</option></select></label>
+<label>Target new contacts<input type="number" name="target" min="1" max="200" value="{{ settings.daily_target }}"></label>
+<label>Minimum fit score<input type="number" name="min_score" min="1" max="200" value="{{ settings.min_score }}"></label>
+</div>
     <fieldset><legend>Countries</legend><div class="country-grid">{% for c in all_countries %}<label class="check"><input type="checkbox" name="countries" value="{{ c }}" {% if c in selected %}checked{% endif %}><span>{{ c }}</span></label>{% endfor %}</div></fieldset>
     <label>Custom search phrases <span class="hint">Optional; one per line. Leave blank to use built-in local-language queries.</span><textarea name="custom_keywords" rows="5" placeholder="frozen trout importer&#10;seafood wholesaler&#10;rainbow trout distributor"></textarea></label>
-    <div class="notice">The crawler checks public pages only, respects robots rules where available, and prioritizes role-based business addresses such as purchasing@, procurement@, sales@ and info@.</div>
+    <div class="notice">The crawler checks public company pages only, respects robots rules where available, and prioritizes role-based business addresses such as purchasing@, procurement@, sales@ and info@. Different company domains are analyzed in parallel for speed. Every analyzed website is permanently retained in <a href="{{ url_for('analyzed_websites') }}"><strong>Analyzed websites</strong></a>, including sites that do not become leads.</div>
     <button class="button primary wide" {% if job.scrape_running %}disabled{% endif %}>{{ 'Discovery is running…' if job.scrape_running else 'Start discovery' }}</button>
   </form>
 </section>
@@ -21,7 +25,7 @@
   <h3>How scoring works</h3>
   <p class="muted">High-value phrases such as “trout”, “frozen fish”, “seafood importer”, “wholesale”, “distributor” and local-language equivalents increase the score. Restaurants, fishing charters and unrelated sites are penalized.</p>
   <h3>Before starting</h3>
-  <p class="muted">Free DDGS search needs no API key. Discovery will not attempt to bypass logins, CAPTCHAs or access controls. You can cancel a running discovery from the Background tasks panel without losing leads already saved.</p>
+  <p class="muted">Free DDGS search needs no API key and uses country-localized ranking plus real result pages. DDGS can automatically use/fall back across several public search engines. Discovery will not attempt to bypass logins, CAPTCHAs or access controls. You can cancel a running discovery without losing leads or analyzed-site history already saved.</p>
 </section>
 </div>
 {% endblock %}

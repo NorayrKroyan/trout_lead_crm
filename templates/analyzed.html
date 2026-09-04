@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Analyzed websites · TroutLead CRM{% endblock %}
+{% block heading %}Analyzed websites{% endblock %}
+{% block subheading %}Permanent audit trail of every company domain inspected by discovery — including sites that did not become leads.{% endblock %}
+{% block top_actions %}<a class="button secondary" href="{{ export_url }}">Export analyzed CSV</a>{% endblock %}
+{% block content %}
+<div class="stats-grid analyzed-stats">
+  <div class="stat-card"><span>Analyzed domains</span><strong>{{ stats.total }}</strong><small>Never deleted by normal lead actions</small></div>
+  <div class="stat-card"><span>Qualified / saved</span><strong>{{ stats.qualified }}</strong><small>Lead saved, existing lead or duplicate contact</small></div>
+  <div class="stat-card"><span>No qualified contact</span><strong>{{ stats.no_match }}</strong><small>Still retained here with the reason</small></div>
+  <div class="stat-card"><span>Errors / unreachable</span><strong>{{ stats.errors }}</strong><small>Useful for diagnostics and future review</small></div>
+</div>
+
+<section class="card">
+  <form class="filters analyzed-filters" method="get">
+    <input name="q" value="{{ q }}" placeholder="Search company, domain, email or query">
+    <select name="country"><option value="">All countries</option>{% for c in countries %}<option value="{{ c }}" {% if country==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+    <select name="status"><option value="">All results</option>{% for s,n in statuses %}<option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s|replace('_',' ')|title }} ({{ n }})</option>{% endfor %}</select>
+    <select name="source"><option value="">All discovery sources</option>{% for src in sources %}<option value="{{ src }}" {% if source==src %}selected{% endif %}>{{ src|replace('_',' ')|title }}</option>{% endfor %}</select>
+    <select name="per_page" title="Rows per page">{% for n in [25,50,100,200] %}<option value="{{ n }}" {% if per_page==n %}selected{% endif %}>{{ n }}/page</option>{% endfor %}</select>
+    <button class="button primary">Filter</button>
+  </form>
+  <div class="notice analyzed-note">These rows are the scraper's permanent memory. A low score, missing email, unreachable site, cancellation or error does <strong>not</strong> make the website disappear. Existing historical rows from before this patch are preserved; richer metadata fills in on new analyses.</div>
+</section>
+
+<section class="card no-pad">
+  <div class="table-wrap">
+    <table class="analyzed-table">
+      <thead><tr><th>Company / website</th><th>Discovery</th><th>Fit</th><th>Analysis result</th><th>Public contacts found</th><th>Checked</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <strong>{{ row.company_name or row.search_title or row.domain }}</strong>
+          <small class="mono">{{ row.domain }}</small>
+          {% if row.website or row.source_url %}<a class="text-link" href="{{ row.website or row.source_url }}" target="_blank" rel="noopener">Open website ↗</a>{% endif %}
+        </td>
+        <td>
+          <strong>{{ row.country or 'Unknown country' }}</strong>
+          <small>{{ (row.discovery_source or 'legacy')|replace('_',' ')|title }}</small>
+          {% if row.search_query %}<small class="query-text">{{ row.search_query }}</small>{% endif %}
+          {% if row.google_place_id %}<small>Place ID: {{ row.google_place_id }}</small>{% endif %}
+        </td>
+        <td>
+          <span class="score">{{ row.score or 0 }}</span>
+          <small class="evidence">{{ row.evidence or '—' }}</small>
+        </td>
+        <td>
+          <span class="status history {{ row.status }}">{{ row.status|replace('_',' ') }}</span>
+          <small class="history-reason">{{ row.reason or row.detail or '—' }}</small>
+          {% if row.http_status %}<small>HTTP: {{ row.http_status }}</small>{% endif %}
+        </td>
+        <td>
+          {% if row.emails %}<span class="mono history-emails">{{ row.emails }}</span>{% else %}<span class="muted">No qualifying email</span>{% endif %}
+          {% if row.phone %}<small>{{ row.phone }}</small>{% endif %}
+          {% if row.address %}<small>{{ row.address }}</small>{% endif %}
+        </td>
+        <td>
+          <strong>{{ row.pages_checked or 0 }} page{{ '' if (row.pages_checked or 0)==1 else 's' }}</strong>
+          <small>Last: {{ row.last_seen }}</small>
+          <small>First: {{ row.first_seen }}</small>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="empty">No matching analyzed websites.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  <div class="pagination-bar">
+    <div>Showing {{ ((page-1)*per_page)+1 if total else 0 }}–{{ [page*per_page, total]|min }} of {{ total }}</div>
+    <nav class="pagination">
+      {% if page > 1 %}<a class="page-link" href="{{ page_url(page-1) }}">← Previous</a>{% endif %}
+      {% set start = [1, page-3]|max %}{% set end = [total_pages, page+3]|min %}
+      {% if start > 1 %}<a class="page-link" href="{{ page_url(1) }}">1</a>{% if start > 2 %}<span class="page-gap">…</span>{% endif %}{% endif %}
+      {% for p in range(start, end+1) %}<a class="page-link {% if p==page %}active{% endif %}" href="{{ page_url(p) }}">{{ p }}</a>{% endfor %}
+      {% if end < total_pages %}{% if end < total_pages-1 %}<span class="page-gap">…</span>{% endif %}<a class="page-link" href="{{ page_url(total_pages) }}">{{ total_pages }}</a>{% endif %}
+      {% if page < total_pages %}<a class="page-link" href="{{ page_url(page+1) }}">Next →</a>{% endif %}
+    </nav>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
