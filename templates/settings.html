@@ -86,11 +86,20 @@
     <div id="brave-fields">
       <label>Brave Search API key <span class="hint">Only needed if you choose Brave</span><input type="password" name="brave_api_key" placeholder="{{ 'Already saved — paste only to replace' if secrets.BRAVE_API_KEY_SET else 'Optional' }}"></label>
     </div>
+    <label>Google Places API key <span class="hint">Optional; enables Google Places discovery on Find companies</span>
+      <input type="password" name="google_places_api_key" placeholder="{{ 'Already saved — paste only to replace' if secrets.GOOGLE_PLACES_API_KEY_SET else 'Google Maps Platform Places API key' }}">
+    </label>
+    <div class="notice"><b>Google Places mode:</b> enable Places API (New) and billing in Google Cloud. The CRM uses Places for discovery, stores the place ID, then gathers persistent CRM contact details from the company's own public website.</div>
     <div class="notice"><b>Free DDGS:</b> public search backends can occasionally rate-limit requests. The app retries automatically, but discovery can sometimes be slower than a paid search API.</div>
     <button class="button primary">Save search settings</button>
   </form>
 </section>
 
+<section class="card">
+  <h2>Database backup</h2>
+  <p class="muted">Download a consistent SQLite snapshot of the CRM database. API keys and email passwords are not included.</p>
+  <a class="button secondary" href="{{ url_for('download_database') }}">Download database backup</a>
+</section>
 <section class="card">
   <h2>Daily automation</h2>
   <form method="post" class="stack-form"><input type="hidden" name="section" value="automation">

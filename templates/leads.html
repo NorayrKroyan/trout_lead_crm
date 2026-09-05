@@ -24,7 +24,7 @@
       <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
       <button class="button success" name="action" value="approve">Approve selected</button>
       <button class="button ghost" name="action" value="unapprove">Unapprove selected</button>
-      <button class="button primary" name="action" value="send" onclick="return confirmAction('Send quotes to all selected leads that are approved and not already sent?');">Send selected quotes</button>
+      <button class="button primary" name="action" value="send" onclick="return confirmAction('Send quotes to all selected approved, non-suppressed leads? Previously sent leads will be sent again.');">Send / resend selected</button>
       <button class="button danger-lite" name="action" value="suppress" onclick="return confirmAction('Suppress all selected leads?');">Suppress selected</button>
     </form>
   </div>
@@ -34,11 +34,11 @@
       <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="country" value="{{ country }}"><input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="approved" value="{{ approved }}"><input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
       <button class="button success">Approve all {{ total }} matching</button>
     </form>
-    <form method="post" action="{{ url_for('send_all_quotes') }}" onsubmit="return confirmAction('Send quotes to ALL approved, unsent leads matching the current filters? This uses your configured delay between emails.');">
+    <form method="post" action="{{ url_for('send_all_quotes') }}" onsubmit="return confirmAction('Send quotes to ALL approved, non-suppressed leads matching the current filters? This includes previously sent leads and may resend them.');">
       <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="country" value="{{ country }}"><input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="approved" value="{{ approved }}"><input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
       <button class="button primary">Send all approved quotes</button>
     </form>
-    <span class="hint">“All” applies to the current filters across every page. Sent and suppressed leads are never re-sent by bulk send.</span>
+    <span class="hint">“All” applies to the current filters across every page. Manual send can resend a sent lead; suppressed leads are always blocked. Scheduled automatic sending still skips already-sent leads.</span>
   </div>
 
   <div class="import-row">
@@ -59,12 +59,12 @@
       <tr class="{% if lead.opted_out %}suppressed-row{% endif %}">
         <td class="select-col"><input class="lead-check" type="checkbox" name="lead_ids" value="{{ lead.id }}" form="bulk-form" {% if lead.opted_out %}disabled{% endif %}></td>
         <td><strong>{{ lead.company_name }}</strong><small>{{ lead.country or 'Unknown country' }} · {{ lead.domain }}</small></td>
-        <td><span class="mono">{{ lead.email }}</span><small>{{ lead.email_type }}</small></td>
+        <td><span class="mono">{{ lead.email }}</span><small>{{ lead.email_type }}</small>{% if lead.phone %}<small>{{ lead.phone }}</small>{% endif %}{% if lead.address %}<small>{{ lead.address }}</small>{% endif %}</td>
         <td><span class="score">{{ lead.score }}</span><small class="evidence">{{ lead.evidence or '—' }}</small></td>
         <td>
           <span class="status {{ lead.status }}">{{ lead.status }}</span>
           {% if lead.approved %}<span class="mini-tag">approved</span>{% endif %}
-          {% if lead.sent_at %}<small>Sent: {{ lead.sent_at }}</small>{% endif %}
+          {% if lead.sent_at %}<small>Last sent: {{ lead.sent_at }} · {{ lead.send_count or 1 }} send{{ '' if (lead.send_count or 1)==1 else 's' }}</small>{% endif %}
           {% if lead.last_error %}<small class="error-text">{{ lead.last_error }}</small>{% endif %}
         </td>
         <td><a class="text-link" href="{{ lead.source_url or lead.website }}" target="_blank" rel="noopener">Open source ↗</a></td>
@@ -76,7 +76,7 @@
             {% else %}
               <form method="post" action="{{ url_for('approve_lead', lead_id=lead.id) }}"><button class="button tiny success">Approve</button></form>
             {% endif %}
-            {% if lead.status != 'sent' and lead.approved %}<form method="post" action="{{ url_for('send_lead', lead_id=lead.id) }}" onsubmit="return confirmAction('Send this quote now?');"><button class="button tiny primary">Send</button></form>{% endif %}
+            {% if lead.approved %}<form method="post" action="{{ url_for('send_lead', lead_id=lead.id) }}" onsubmit="return confirmAction('{{ 'Resend' if lead.status == 'sent' else 'Send' }} this quote now?');"><button class="button tiny primary">{{ 'Resend' if lead.status == 'sent' else 'Send' }}</button></form>{% endif %}
             <form method="post" action="{{ url_for('suppress_lead', lead_id=lead.id) }}" onsubmit="return confirmAction('Add this address to the do-not-contact list?');"><button class="button tiny danger-lite">Suppress</button></form>
           {% else %}
             <form method="post" action="{{ url_for('restore_lead', lead_id=lead.id) }}"><button class="button tiny ghost">Restore</button></form>

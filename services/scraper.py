@@ -25,7 +25,7 @@ USER_AGENT = "TroutLeadCRM/1.1 (+business-contact-discovery; public-business-ema
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?\d[\d\s()./-]{6,}\d)")
 MAX_HTML_BYTES = 900_000
-MAX_CRAWL_WORKERS = 5
+MAX_CRAWL_WORKERS = 12
 
 ROLE_PREFIXES = (
     "purchase", "purchasing", "procurement", "buying", "buyer", "sourcing",
@@ -838,3 +838,87 @@ def scrape_google_places_leads(countries, target=50, min_score=55, custom_keywor
         "saved": saved_companies, "emails": saved_emails, "inspected": inspected,
         "skipped_seen": skipped_seen, "queries": 0, "cancelled": cancelled,
     }
+
+def scrape_hybrid_leads(
+    countries,
+    target=50,
+    min_score=55,
+    custom_keywords="",
+    progress=None,
+    cancel_event=None,
+):
+    target = max(1, min(int(target), 200))
+    totals = {
+        "saved": 0,
+        "emails": 0,
+        "inspected": 0,
+        "skipped_seen": 0,
+        "queries": 0,
+        "cancelled": False,
+    }
+
+    def google_progress(message, current=0, total=0, inspected=0, skipped_seen=0, **_):
+        if progress:
+            progress(
+                f"Hybrid - Google - {message}",
+                current=current,
+                total=target,
+                inspected=inspected,
+                skipped_seen=skipped_seen,
+            )
+
+    try:
+        result = scrape_google_places_leads(
+            countries,
+            target=target,
+            min_score=min_score,
+            custom_keywords=custom_keywords,
+            progress=google_progress,
+            cancel_event=cancel_event,
+        )
+    except Exception as exc:
+        add_log("hybrid_google_fallback", f"Google Places unavailable: {exc}")
+        result = {
+            "saved": 0,
+            "emails": 0,
+            "inspected": 0,
+            "skipped_seen": 0,
+            "queries": 0,
+            "cancelled": False,
+        }
+
+    for key in ("saved", "emails", "inspected", "skipped_seen", "queries"):
+        totals[key] += int(result.get(key, 0) or 0)
+    totals["cancelled"] = bool(result.get("cancelled"))
+
+    if totals["cancelled"] or _cancelled(cancel_event) or totals["saved"] >= target:
+        return totals
+
+    remaining = target - totals["saved"]
+    base_saved = totals["saved"]
+    base_inspected = totals["inspected"]
+    base_skipped = totals["skipped_seen"]
+
+    def web_progress(message, current=0, total=0, inspected=0, skipped_seen=0, **_):
+        if progress:
+            progress(
+                f"Hybrid - Web - {message}",
+                current=base_saved + int(current or 0),
+                total=target,
+                inspected=base_inspected + int(inspected or 0),
+                skipped_seen=base_skipped + int(skipped_seen or 0),
+            )
+
+    web = scrape_new_leads(
+        countries,
+        target=remaining,
+        min_score=min_score,
+        custom_keywords=custom_keywords,
+        progress=web_progress,
+        cancel_event=cancel_event,
+    )
+
+    for key in ("saved", "emails", "inspected", "skipped_seen", "queries"):
+        totals[key] += int(web.get(key, 0) or 0)
+    totals["cancelled"] = bool(web.get("cancelled")) or _cancelled(cancel_event)
+    return totals

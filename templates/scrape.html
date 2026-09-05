@@ -8,8 +8,8 @@
   <div class="card-head"><div><h2>Discovery run</h2><p>Choose a discovery source → company websites → public email/details extraction → scoring</p></div></div>
   <form method="post" class="stack-form">
     <div class="form-row three">
-<label>Discovery source<select name="provider"><option value="web">Web search (DDGS/Brave)</option><option value="google_places">Google Places API{% if not secrets.GOOGLE_PLACES_API_KEY_SET %} — key required{% endif %}</option></select></label>
-<label>Target new contacts<input type="number" name="target" min="1" max="200" value="{{ settings.daily_target }}"></label>
+<label>Discovery source<select name="provider"><option value="hybrid">Hybrid - Google Places + DDGS/Brave</option><option value="google_places">Google Places API{% if not secrets.GOOGLE_PLACES_API_KEY_SET %} - key required{% endif %}</option><option value="web">Web search (DDGS/Brave)</option></select></label>
+<label>Target new companies<input type="number" name="target" min="1" max="200" value="{{ settings.daily_target }}"></label>
 <label>Minimum fit score<input type="number" name="min_score" min="1" max="200" value="{{ settings.min_score }}"></label>
 </div>
     <fieldset><legend>Countries</legend><div class="country-grid">{% for c in all_countries %}<label class="check"><input type="checkbox" name="countries" value="{{ c }}" {% if c in selected %}checked{% endif %}><span>{{ c }}</span></label>{% endfor %}</div></fieldset>

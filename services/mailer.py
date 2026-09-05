@@ -14,6 +14,7 @@ from .db import (
     eligible_to_send,
     get_settings,
     get_leads_by_ids,
+    mark_lead_sent,
 )
 
 
@@ -145,7 +146,7 @@ def _build_message(lead, config, cfg=None):
 
 def _mark_sent(lead, config):
     now = datetime.now().astimezone().isoformat(timespec="seconds")
-    update_lead(lead["id"], status="sent", sent_at=now, last_error="")
+    mark_lead_sent(lead["id"], now)
     add_log("email_sent", f"Sent quote to {lead['email']} via {config['provider']}", lead["id"])
 
 
@@ -244,7 +245,7 @@ def _send_many(leads, requested, sleep_between=True, cancel_event=None, progress
                 sent += 1
             except Exception as exc:
                 failed += 1
-                update_lead(lead["id"], status="failed", last_error=str(exc))
+                update_lead(lead["id"], status=("sent" if lead["sent_at"] else "failed"), last_error=str(exc))
                 add_log("email_failed", str(exc), lead["id"])
 
             processed += 1
@@ -296,7 +297,11 @@ def send_batch(limit=None, sleep_between=True, cancel_event=None, progress=None)
 
 
 def send_selected(lead_ids, sleep_between=True, cancel_event=None, progress=None):
-    """Send selected IDs using one SMTP session; sent/suppressed/unapproved leads are skipped."""
+    """Send explicitly selected IDs using one SMTP session.
+
+    Previously-sent leads are allowed here because the user selected them manually.
+    Suppressed and unapproved leads are still skipped.
+    """
     leads = get_leads_by_ids(lead_ids, sendable_only=True)
     requested = len({int(x) for x in lead_ids if str(x).isdigit()})
     return _send_many(

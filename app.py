@@ -1,3 +1,10 @@
+import os
+import sqlite3
+import tempfile
+from datetime import datetime
+from flask import send_file, after_this_request
+from services.db import DB_PATH
+from services.scraper import scrape_google_places_leads, scrape_hybrid_leads
 import csv
 import io
 import math
@@ -422,7 +429,11 @@ def _scrape_thread(countries, target, min_score, custom_keywords, provider="web"
                 JOB_STATE["scrape_inspected"] = int(inspected or 0)
                 JOB_STATE["scrape_skipped_seen"] = int(skipped_seen or 0)
 
-        scrape_func = scrape_google_places_leads if provider == "google_places" else scrape_new_leads
+        scrape_func = {
+            "web": scrape_new_leads,
+            "google_places": scrape_google_places_leads,
+            "hybrid": scrape_hybrid_leads,
+        }.get(provider, scrape_hybrid_leads)
         result = scrape_func(
             countries,
             target,
@@ -463,9 +474,9 @@ def scrape_page():
         target = int(request.form.get("target", settings.get("daily_target", "50")))
         min_score = int(request.form.get("min_score", settings.get("min_score", "55")))
         custom_keywords = request.form.get("custom_keywords", "")
-        provider = request.form.get("provider", "web").strip()
-        if provider not in {"web", "google_places"}:
-            provider = "web"
+        provider = request.form.get("provider", "hybrid").strip()
+        if provider not in {"web", "google_places", "hybrid"}:
+            provider = "hybrid"
         if not countries:
             flash("Select at least one country.", "error")
             return redirect(url_for("scrape_page"))
@@ -648,6 +659,40 @@ def import_csv():
         flash(f"CSV import failed: {exc}", "error")
     return redirect(url_for("leads"))
 
+
+@app.get("/backup/database")
+def download_database():
+    temp = tempfile.NamedTemporaryFile(
+        prefix="troutlead_backup_",
+        suffix=".db",
+        delete=False,
+    )
+    backup_path = temp.name
+    temp.close()
+
+    source = sqlite3.connect(str(DB_PATH), timeout=30)
+    destination = sqlite3.connect(backup_path)
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+    @after_this_request
+    def cleanup_backup(response):
+        try:
+            os.remove(backup_path)
+        except OSError:
+            pass
+        return response
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return send_file(
+        backup_path,
+        as_attachment=True,
+        download_name=f"troutlead_backup_{timestamp}.db",
+        mimetype="application/octet-stream",
+    )
 
 if __name__ == "__main__":
     try:

@@ -18,6 +18,7 @@ SECRET_KEYS = {
     "REPLY_TO",
     "SEARCH_PROVIDER",
     "BRAVE_API_KEY",
+    "GOOGLE_PLACES_API_KEY",
     "SENDER_COMPANY",
     "SENDER_PHONE",
     "SENDER_WEBSITE",
@@ -41,6 +42,7 @@ DEFAULTS = {
     "REPLY_TO": "",
     "SEARCH_PROVIDER": "ddgs",
     "BRAVE_API_KEY": "",
+    "GOOGLE_PLACES_API_KEY": "",
     "SENDER_COMPANY": "Your Company",
     "SENDER_PHONE": "",
     "SENDER_WEBSITE": "",
@@ -69,7 +71,7 @@ def load_env_file():
 
 def save_env(values):
     current = load_env_file()
-    keep_if_blank = {"GMAIL_APP_PASSWORD", "SMTP_PASSWORD", "BRAVE_API_KEY"}
+    keep_if_blank = {"GMAIL_APP_PASSWORD", "SMTP_PASSWORD", "BRAVE_API_KEY", "GOOGLE_PLACES_API_KEY"}
     for key, value in values.items():
         if key in SECRET_KEYS and value is not None:
             if key in keep_if_blank and value == "" and current.get(key):
@@ -94,7 +96,9 @@ def masked_settings():
         "GMAIL_APP_PASSWORD_SET": bool(values.get("GMAIL_APP_PASSWORD")),
         "SMTP_PASSWORD_SET": bool(values.get("SMTP_PASSWORD")),
         "BRAVE_API_KEY_SET": bool(values.get("BRAVE_API_KEY")),
+        "GOOGLE_PLACES_API_KEY_SET": bool(values.get("GOOGLE_PLACES_API_KEY")),
         "GMAIL_APP_PASSWORD": "",
         "SMTP_PASSWORD": "",
         "BRAVE_API_KEY": "",
+        "GOOGLE_PLACES_API_KEY": "",
     }
